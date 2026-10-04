@@ -10,7 +10,7 @@ Plain right-drag with drafted pawns issues a take-cover order:
 - The cell where you press is the rally point the formation is centered on.
 - The drag direction is the enemy direction; cover is chosen against it.
 - The drag length is the total formation width.
-- Pawns spread out in a single row, stepping at most 2 cells forward or back to reach cover. Pawns that find no cover still take their place in the row.
+- Pawns line up on the rally point and fill rows behind it as needed. To reach cover they may also step forward, up to a quarter of the formation width (1 to 6 cells); pawns without cover never stand in front of the rally point. Pawns that still do not fit move to free cells near the rally point instead of staying put.
 
 While dragging, each destination circle shows its cover against the enemy direction: green 50% or more, yellow 20% or more, red below 20%.
 

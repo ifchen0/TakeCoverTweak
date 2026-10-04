@@ -11,7 +11,8 @@ While pawns are drafted, a plain right-click acts when you release the button in
 [*][b]Press point:[/b] the rally point the formation is centered on.
 [*][b]Drag direction:[/b] the enemy direction. Cover is chosen against it.
 [*][b]Drag length:[/b] the total formation width.
-[*]Pawns spread out evenly in a single row, stepping at most 2 cells forward or back to reach cover. Pawns that find no cover still take their place in the row.
+[*]Pawns line up evenly on the rally point and fill rows behind it as needed. To reach cover they may also step forward, up to a quarter of the formation width (1 to 6 cells); pawns without cover never stand in front of the rally point.
+[*]Pawns that still do not fit move to free cells near the rally point instead of staying where they are (TakeCover leaves them in place).
 [/list]
 
 [h2]Cover preview[/h2]While dragging, each destination circle shows how much cover that cell gives against the enemy direction:

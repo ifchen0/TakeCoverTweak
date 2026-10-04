@@ -281,6 +281,25 @@ public static class AssignDestinationsPatch
 
     private static readonly MethodInfo SpacingReplacement = AccessTools.Method(typeof(Tweak), nameof(Tweak.LateralSpacing));
 
+    private static readonly MethodInfo DimensionsOriginal = AccessTools.Method(typeof(TakeCoverPlanner.SearchDimensions), nameof(TakeCoverPlanner.SearchDimensions.ForPawnCount));
+
+    private static readonly MethodInfo DimensionsReplacement = AccessTools.Method(typeof(AssignDestinationsPatch), nameof(SearchDimensionsFor));
+
+    /// <summary>Rows searched behind the rally line for the planner call in progress: half the dragged width, up to 12.</summary>
+    public static int RearDepth;
+
+    /// <summary>
+    /// Replaces SearchDimensions.ForPawnCount: same width, but the depth grows with the dragged width instead of only
+    /// with the pawn count, so wide formations find more cover and the forward cover range is not cut short.
+    /// </summary>
+    public static TakeCoverPlanner.SearchDimensions SearchDimensionsFor(int pawnCount, int manualLateralRangeOffset)
+    {
+        TakeCoverPlanner.SearchDimensions dimensions = TakeCoverPlanner.SearchDimensions.ForPawnCount(pawnCount, manualLateralRangeOffset);
+        int rear = Mathf.Max(dimensions.RearRange, RearDepth);
+        int forward = Mathf.Max(dimensions.ForwardRange, RowBandPatch.CoverFrontDepth);
+        return new TakeCoverPlanner.SearchDimensions(dimensions.LateralRange, rear, forward);
+    }
+
     public static bool Prefix(List<Pawn> pawns, IntVec3 start, ref IntVec3 end, ref int manualLateralRangeOffset, List<IntVec3> dests, ref TakeCoverSearchArea searchArea)
     {
         if (pawns.Count == 0)
@@ -299,6 +318,9 @@ public static class AssignDestinationsPatch
         }
         end = Tweak.ProjectThreatCell(start, end, pawns[0].Map);
         CoverPreview.ThreatCell = end;
+        OverflowPatch.RallyCell = start;
+        RowBandPatch.CoverFrontDepth = Mathf.Clamp(Mathf.RoundToInt(length / 4f), 1, 6);
+        RearDepth = Mathf.Clamp(Mathf.RoundToInt(length / 2f), 0, 12);
 
         // Mirror TakeCover's SearchDimensions.ForPawnCount base width, then offset it to the dragged half-width.
         float t = (Mathf.Clamp(pawns.Count, 1, 12) - 1) / 11f;
@@ -315,6 +337,7 @@ public static class AssignDestinationsPatch
     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         int count = 0;
+        int dimensionsCount = 0;
         foreach (CodeInstruction instruction in instructions)
         {
             if (instruction.Calls(SpacingOriginal))
@@ -322,7 +345,16 @@ public static class AssignDestinationsPatch
                 instruction.operand = SpacingReplacement;
                 count++;
             }
+            else if (instruction.Calls(DimensionsOriginal))
+            {
+                instruction.operand = DimensionsReplacement;
+                dimensionsCount++;
+            }
             yield return instruction;
+        }
+        if (dimensionsCount == 0)
+        {
+            Log.Warning("[TakeCoverTweak] SearchDimensions.ForPawnCount call not found in TakeCoverPlanner.AssignDestinations; search depth unchanged.");
         }
         if (count == 0)
         {
@@ -355,16 +387,81 @@ public static class HandleRangeScrollPatch
 }
 
 /// <summary>
-/// Keeps the formation a single row: only candidates within <see cref="MaxDepth"/> cells in front of or behind the
-/// rally line survive. TakeCover's fallback tiers then fill pawns without cover onto the row.
+/// Keeps pawns from moving past the rally line: a cell in front of it is allowed only when that cell itself has cover
+/// (TakeCover's minimum cover chance) and lies at most <see cref="CoverFrontDepth"/> cells ahead (a quarter of the
+/// dragged width, 1 to 6). This is judged per cell, not per tier: when no cell can see the threat, cover cells only
+/// reach the planner through the last no-sight tier, which asks for no minimum cover. Behind the line the whole search
+/// depth is allowed (see AssignDestinationsPatch.SearchDimensionsFor); the depth penalty keeps pawns close to the line.
 /// </summary>
 [HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.BuildCandidates))]
 public static class RowBandPatch
 {
-    public const int MaxDepth = 2;
+    public static int CoverFrontDepth = 4;
 
     public static void Postfix(List<TakeCoverPlanner.CoverCandidate> __result)
     {
-        __result.RemoveAll(candidate => candidate.Depth > MaxDepth || candidate.Depth < -MaxDepth);
+        // Positive depth is toward the enemy.
+        __result.RemoveAll(candidate => candidate.Depth > 0 && (candidate.Depth > CoverFrontDepth || candidate.CoverChance < TakeCoverPlanner.MinimumCoverChance));
+    }
+}
+
+/// <summary>
+/// TakeCover leaves pawns where they are when it runs out of destinations, which happened a lot with large
+/// selections. Those pawns now get a free cell near the rally point, not past the rally line, picked the same way as
+/// the vanilla group move.
+/// </summary>
+[HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.AssignSelectedDestinations))]
+[HarmonyPriority(Priority.First)]
+public static class OverflowPatch
+{
+    public static IntVec3 RallyCell = IntVec3.Invalid;
+
+    public static void Postfix(List<TakeCoverPlanner.PawnProfile> pawnProfiles, List<TakeCoverPlanner.SelectedDestination> selectedDestinations, List<IntVec3> dests)
+    {
+        if (!RallyCell.IsValid || !CoverPreview.ThreatCell.IsValid)
+        {
+            return;
+        }
+        HashSet<IntVec3> selectedCells = new HashSet<IntVec3>();
+        for (int i = 0; i < selectedDestinations.Count; i++)
+        {
+            selectedCells.Add(selectedDestinations[i].Cell);
+        }
+        HashSet<IntVec3> used = new HashSet<IntVec3>();
+        List<TakeCoverPlanner.PawnProfile> overflow = new List<TakeCoverPlanner.PawnProfile>();
+        foreach (TakeCoverPlanner.PawnProfile profile in pawnProfiles)
+        {
+            IntVec3 dest = dests[profile.PawnIndex];
+            if (dest.IsValid && selectedCells.Contains(dest))
+            {
+                used.Add(dest);
+            }
+            else
+            {
+                overflow.Add(profile);
+            }
+        }
+        if (overflow.Count == 0)
+        {
+            return;
+        }
+        Vector3 forward = CoverPreview.ThreatCell.ToVector3() - RallyCell.ToVector3();
+        forward.y = 0f;
+        forward.Normalize();
+        IntVec3 rally = RallyCell;
+        foreach (TakeCoverPlanner.PawnProfile profile in overflow)
+        {
+            Pawn pawn = profile.Pawn;
+            if (!pawn.Spawned)
+            {
+                continue;
+            }
+            IntVec3 cell = RCellFinder.BestOrderedGotoDestNear(rally, pawn, c => !used.Contains(c) && Vector3.Dot(c.ToVector3() - rally.ToVector3(), forward) <= 0.5f);
+            if (cell.IsValid)
+            {
+                dests[profile.PawnIndex] = cell;
+                used.Add(cell);
+            }
+        }
     }
 }
