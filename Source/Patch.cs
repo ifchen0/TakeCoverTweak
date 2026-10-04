@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -14,7 +15,29 @@ public static class TakeCoverTweakMod
 {
     static TakeCoverTweakMod()
     {
-        new Harmony("ifchen0.takecovertweak").PatchAll();
+        // Patch class by class: if a TakeCover update breaks one target, only that feature is skipped.
+        Harmony harmony = new Harmony("ifchen0.takecovertweak");
+        int skipped = 0;
+        foreach (Type type in AccessTools.GetTypesFromAssembly(typeof(TakeCoverTweakMod).Assembly))
+        {
+            if (!type.GetCustomAttributes(typeof(HarmonyPatch), false).Any())
+            {
+                continue;
+            }
+            try
+            {
+                harmony.CreateClassProcessor(type).Patch();
+            }
+            catch (Exception ex)
+            {
+                skipped++;
+                Log.Warning($"[TakeCoverTweak] Skipped {type.Name}: {ex.GetBaseException().Message}");
+            }
+        }
+        if (skipped > 0)
+        {
+            Log.Warning($"[TakeCoverTweak] {skipped} patch(es) could not be applied, probably because TakeCover was updated. The rest of the tweak still works.");
+        }
     }
 }
 
@@ -31,10 +54,6 @@ internal static class Tweak
     private const int ThreatProjectionCells = 40;
 
     private const int MinThreatProjectionCells = 4;
-
-    public static readonly AccessTools.FieldRef<TakeCoverController, IntVec3> StartRef = AccessTools.FieldRefAccess<TakeCoverController, IntVec3>("start");
-
-    public static readonly AccessTools.FieldRef<TakeCoverController, IntVec3> EndRef = AccessTools.FieldRefAccess<TakeCoverController, IntVec3>("end");
 
     private static readonly MethodInfo HandleMultiselectGotoMethod = AccessTools.Method(typeof(Selector), "HandleMultiselectGoto");
 
@@ -143,6 +162,10 @@ internal static class Tweak
 
     private static void MultiselectGoto(Selector selector, FloatMenuContext context)
     {
+        if (HandleMultiselectGotoMethod == null)
+        {
+            return;
+        }
         HandleMultiselectGotoMethod.Invoke(selector, new object[] { context });
         // The mouse button is already up, so finish the vanilla group goto right away.
         if (selector.gotoController.Active)
@@ -314,7 +337,7 @@ public static class FinalizeInteractionPatch
 {
     public static bool Prefix(TakeCoverController __instance)
     {
-        if (!__instance.Active || Tweak.DragLength(Tweak.StartRef(__instance), Tweak.EndRef(__instance)) >= Tweak.MinDragCells)
+        if (!__instance.Active || Tweak.DragLength(__instance.start, __instance.end) >= Tweak.MinDragCells)
         {
             return true;
         }
