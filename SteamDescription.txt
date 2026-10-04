@@ -1,0 +1,39 @@
+Unofficial control tweak for [url=https://steamcommunity.com/workshop/filedetails/?id=3749200746]TakeCover[/url], for Company of Heroes-style squad orders.
+
+[h2]Controls[/h2][list]
+[*][b]Right-drag[/b] with drafted pawns: take cover. No modifier key needed.
+[*][b]Right-click without dragging[/b]: vanilla behavior (move, pick up, attack, float menu).
+[*][b]Ctrl + right-click or right-drag[/b]: fully vanilla, including the vanilla drag formation.
+[/list]
+While pawns are drafted, a plain right-click acts when you release the button instead of when you press it, because the mod has to wait to see whether you drag.
+
+[h2]Formation[/h2][list]
+[*][b]Press point:[/b] the rally point the formation is centered on.
+[*][b]Drag direction:[/b] the enemy direction. Cover is chosen against it.
+[*][b]Drag length:[/b] the total formation width.
+[*]Pawns spread out evenly in a single row, stepping at most 2 cells forward or back to reach cover. Pawns that find no cover still take their place in the row.
+[/list]
+
+[h2]Cover preview[/h2]While dragging, each destination circle shows how much cover that cell gives against the enemy direction:
+[list]
+[*][b]Green:[/b] 50% or more
+[*][b]Yellow:[/b] 20% or more
+[*][b]Red:[/b] below 20%
+[/list]
+The drag line is no longer drawn.
+
+[h2]Other changes to TakeCover[/h2][list]
+[*][b]No more random vanilla fallback:[/b] TakeCover hands the click back to vanilla when you press on sandbags, trees, furniture, items, corpses or other pawns. The tweak takes every press while drafted and only falls back to vanilla when you release without dragging.
+[*][b]Faster with large groups:[/b] the slot selection is rewritten with the same result but far less work. With 42 pawns a recompute went from up to 450 ms to 2-4 ms, so dragging no longer stutters.
+[*][b]Shift + scroll width adjustment removed:[/b] the width comes from the drag length.
+[/list]
+
+[h2]Notes[/h2][list]
+[*]Requires TakeCover and Harmony. Load after TakeCover.
+[*]Safe to add to or remove from an existing save. Disable it and TakeCover works exactly as before.
+[*]Achtung! is not supported (TakeCover already marks it as incompatible). Combat Extended has not been tested.
+[/list]
+
+[h2]A note to rabiosus[/h2]Sorry for changing how your mod works. I really like TakeCover, and the cover search behind every order here is still yours. I just really wanted a Company of Heroes-like way to command squads, and building on your mod was the best way I found to get there. If you would rather this tweak not be shared, please let me know.
+[hr][/hr]
+This mod was developed with the help of AI coding tools (Claude Code). Full source code is included in the Source folder for review.

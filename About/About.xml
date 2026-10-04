@@ -12,11 +12,15 @@ Plain right-drag with drafted pawns issues a take-cover order:
 - The drag length is the total formation width.
 - Pawns spread out in a single row, stepping at most 2 cells forward or back to reach cover. Pawns that find no cover still take their place in the row.
 
+While dragging, each destination circle shows its cover against the enemy direction: green 50% or more, yellow 20% or more, red below 20%.
+
 A right-click without dragging, or any right-click while holding Ctrl, behaves like vanilla.
 
 Shift + scroll width adjustment and the drag line are removed.
 
-Safe to add to or remove from an existing save.</description>
+Safe to add to or remove from an existing save.
+
+A note to rabiosus, the author of TakeCover: sorry for changing how your mod works. I really like TakeCover, and the cover search behind every order here is still yours. I just really wanted a Company of Heroes-like way to command squads, and building on your mod was the best way I found to get there. If you would rather this tweak not be shared, please let me know.</description>
   <modDependencies>
     <li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName><steamWorkshopUrl>steam://url/CommunityFilePage/2009463077</steamWorkshopUrl></li>
     <li><packageId>rabiosus.TakeCover</packageId><displayName>TakeCover</displayName><steamWorkshopUrl>steam://url/CommunityFilePage/3749200746</steamWorkshopUrl></li>

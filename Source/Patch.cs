@@ -275,6 +275,7 @@ public static class AssignDestinationsPatch
             return false;
         }
         end = Tweak.ProjectThreatCell(start, end, pawns[0].Map);
+        CoverPreview.ThreatCell = end;
 
         // Mirror TakeCover's SearchDimensions.ForPawnCount base width, then offset it to the dragged half-width.
         float t = (Mathf.Clamp(pawns.Count, 1, 12) - 1) / 11f;
@@ -328,37 +329,6 @@ public static class FinalizeInteractionPatch
 public static class HandleRangeScrollPatch
 {
     public static bool Prefix() => false;
-}
-
-/// <summary>Removes the start-to-end drag line; destination ghosts and circles are still drawn.</summary>
-[HarmonyPatch(typeof(TakeCoverController), nameof(TakeCoverController.Draw))]
-public static class DrawPatch
-{
-    private static readonly MethodInfo DrawLineOriginal = AccessTools.Method(typeof(GenDraw), nameof(GenDraw.DrawLineBetween), new[] { typeof(Vector3), typeof(Vector3), typeof(Material), typeof(float) });
-
-    private static readonly MethodInfo DrawLineReplacement = AccessTools.Method(typeof(DrawPatch), nameof(SkipLine));
-
-    public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-    {
-        int count = 0;
-        foreach (CodeInstruction instruction in instructions)
-        {
-            if (instruction.Calls(DrawLineOriginal))
-            {
-                instruction.operand = DrawLineReplacement;
-                count++;
-            }
-            yield return instruction;
-        }
-        if (count == 0)
-        {
-            Log.Warning("[TakeCoverTweak] Drag line draw call not found in TakeCoverController.Draw; line still shown.");
-        }
-    }
-
-    public static void SkipLine(Vector3 a, Vector3 b, Material mat, float lineWidth)
-    {
-    }
 }
 
 /// <summary>
