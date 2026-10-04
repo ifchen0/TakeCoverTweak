@@ -42,79 +42,25 @@ public static class TakeCoverTweakMod
 }
 
 /// <summary>
-/// Shared state and helpers for the tweaked TakeCover controls:
+/// Shared helpers for the tweaked TakeCover controls:
 /// plain right-drag issues a take-cover order, Ctrl + right-click falls back to vanilla.
-/// The press cell is the rally point, the drag direction faces the enemy and the drag length is the total formation width.
 /// </summary>
 internal static class Tweak
 {
     /// <summary>Drags shorter than this (in cells) are treated as a plain vanilla right-click.</summary>
     public const float MinDragCells = 2f;
 
-    private const int ThreatProjectionCells = 40;
-
-    private const int MinThreatProjectionCells = 4;
-
     private static readonly MethodInfo HandleMultiselectGotoMethod = AccessTools.Method(typeof(Selector), "HandleMultiselectGoto");
 
     /// <summary>Map position of the right-click that started the current interaction.</summary>
     public static Vector3 ClickPos;
-
-    /// <summary>Lateral slot spacing for the planner call in progress.</summary>
-    public static float CurrentSpacing = 1f;
-
-    /// <summary>Half-width (in cells) of the row for the planner call in progress.</summary>
-    public static float CurrentHalfWidth = 1f;
 
     private static bool CtrlHeld => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
 
     /// <summary>Replaces TakeCoverInput.ActivationKeyHeld: TakeCover runs only while Ctrl is NOT held.</summary>
     public static bool ActivationKeyHeld() => !CtrlHeld;
 
-    /// <summary>Replaces TakeCoverPlanner.LateralSpacingForOffset so slots spread over the dragged width.</summary>
-    public static float LateralSpacing(int manualLateralRangeOffset) => CurrentSpacing;
-
-    /// <summary>
-    /// Ideal lateral position of a slot: all slots spread evenly over [-half, +half], handed out center-out
-    /// (left before right, like TakeCover). With more pawns than columns the step drops below one cell, so every
-    /// column gets a similar share instead of the surplus piling up at the edges.
-    /// </summary>
-    public static float IdealLateral(int slotIndex, int slotCount)
-    {
-        if (slotCount <= 1)
-        {
-            return 0f;
-        }
-        float step = 2f * CurrentHalfWidth / (slotCount - 1);
-        if (slotCount % 2 == 1)
-        {
-            return TakeCoverPlanner.CenterOutLateralOffset(slotIndex) * step;
-        }
-        float offset = (slotIndex / 2 + 0.5f) * step;
-        return slotIndex % 2 == 0 ? -offset : offset;
-    }
-
     public static float DragLength(IntVec3 start, IntVec3 end) => (end - start).LengthHorizontal;
-
-    /// <summary>
-    /// Projects the threat cell along the drag direction, pulled back toward the start until it is on the map.
-    /// </summary>
-    public static IntVec3 ProjectThreatCell(IntVec3 start, IntVec3 end, Map map)
-    {
-        Vector3 forward = end.ToVector3() - start.ToVector3();
-        forward.y = 0f;
-        forward.Normalize();
-        IntVec3 fallback = start + ToCell(forward * ThreatProjectionCells);
-        for (int d = ThreatProjectionCells; d >= MinThreatProjectionCells; d--)
-        {
-            IntVec3 cell = start + ToCell(forward * d);
-            if (cell.InBounds(map))
-            {
-                return cell;
-            }
-        }
-        return fallback;
-    }
 
     /// <summary>
     /// Reproduces the vanilla right-click handling of Selector.HandleMapClicks for a click at the given position.
@@ -133,7 +79,7 @@ internal static class Tweak
         {
             options = FloatMenuMakerMap.GetOptions(selectedPawns, clickPos, out context);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error("[TakeCoverTweak] Error trying to make float menu: " + ex);
         }
@@ -173,8 +119,80 @@ internal static class Tweak
             selector.gotoController.FinalizeInteraction();
         }
     }
+}
 
-    private static IntVec3 ToCell(Vector3 v) => new IntVec3(Mathf.RoundToInt(v.x), 0, Mathf.RoundToInt(v.z));
+/// <summary>
+/// Geometry of the order being planned, set once per planner call by <see cref="AssignDestinationsPatch"/>:
+/// the press cell is the rally point, the drag direction faces the enemy and the drag length is the total width.
+/// </summary>
+internal static class Formation
+{
+    private const int ThreatProjectionCells = 40;
+
+    private const int MinThreatProjectionCells = 4;
+
+    public static IntVec3 Rally = IntVec3.Invalid;
+
+    /// <summary>Threat guess 40 cells down the drag direction, pulled back onto the map.</summary>
+    public static IntVec3 Threat = IntVec3.Invalid;
+
+    /// <summary>Columns searched on each side of the rally point: half the dragged width, 1 to 24.</summary>
+    public static int HalfWidth = 1;
+
+    /// <summary>How far cover may pull pawns past the rally line: a quarter of the dragged width, 1 to 6.</summary>
+    public static int FrontDepth = 1;
+
+    /// <summary>Rows searched behind the rally line: half the dragged width, up to 12 (never below TakeCover's own).</summary>
+    public static int RearDepth;
+
+    /// <summary>Lateral slot spacing, only used by TakeCover's original (debug-logged) selection.</summary>
+    public static float Spacing = 1f;
+
+    public static void Set(IntVec3 rally, IntVec3 dragEnd, float length, int pawnCount, Map map)
+    {
+        Rally = rally;
+        Threat = ProjectThreat(rally, dragEnd, map);
+        HalfWidth = Mathf.Clamp(Mathf.RoundToInt(length / 2f), 1, 24);
+        FrontDepth = Mathf.Clamp(Mathf.RoundToInt(length / 4f), 1, 6);
+        RearDepth = Mathf.Clamp(Mathf.RoundToInt(length / 2f), 0, 12);
+        Spacing = pawnCount > 1 ? 2f * HalfWidth / (pawnCount - 1) : 1f;
+    }
+
+    /// <summary>
+    /// Ideal lateral position of a slot: all slots spread evenly over [-half, +half], handed out center-out
+    /// (left before right, like TakeCover). With more pawns than columns the step drops below one cell, so every
+    /// column gets a similar share instead of the surplus piling up at the edges.
+    /// </summary>
+    public static float IdealLateral(int slotIndex, int slotCount)
+    {
+        if (slotCount <= 1)
+        {
+            return 0f;
+        }
+        float step = 2f * HalfWidth / (slotCount - 1);
+        if (slotCount % 2 == 1)
+        {
+            return TakeCoverPlanner.CenterOutLateralOffset(slotIndex) * step;
+        }
+        float offset = (slotIndex / 2 + 0.5f) * step;
+        return slotIndex % 2 == 0 ? -offset : offset;
+    }
+
+    private static IntVec3 ProjectThreat(IntVec3 start, IntVec3 end, Map map)
+    {
+        Vector3 forward = end.ToVector3() - start.ToVector3();
+        forward.y = 0f;
+        forward.Normalize();
+        for (int d = ThreatProjectionCells; d >= MinThreatProjectionCells; d--)
+        {
+            IntVec3 cell = start + TakeCoverPlanner.ToCell(forward * d);
+            if (cell.InBounds(map))
+            {
+                return cell;
+            }
+        }
+        return start + TakeCoverPlanner.ToCell(forward * ThreatProjectionCells);
+    }
 }
 
 /// <summary>
@@ -185,9 +203,26 @@ internal static class Tweak
 [HarmonyAfter("rabiosus.TakeCover")]
 public static class HandleMapClicksPatch
 {
+    private static readonly MethodInfo Original = AccessTools.PropertyGetter(typeof(TakeCoverInput), nameof(TakeCoverInput.ActivationKeyHeld));
+
+    private static readonly MethodInfo Replacement = AccessTools.Method(typeof(Tweak), nameof(Tweak.ActivationKeyHeld));
+
     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        return ActivationKeySwap.Swap(instructions, "Selector.HandleMapClicks");
+        int count = 0;
+        foreach (CodeInstruction instruction in instructions)
+        {
+            if (instruction.Calls(Original))
+            {
+                instruction.operand = Replacement;
+                count++;
+            }
+            yield return instruction;
+        }
+        if (count == 0)
+        {
+            Log.Warning("[TakeCoverTweak] No TakeCover activation key check found in Selector.HandleMapClicks; controls unchanged.");
+        }
     }
 }
 
@@ -216,6 +251,11 @@ public static class TryStartInteractionPatch
         {
             return false;
         }
+        IntVec3 rallyCell = CellFinder.StandableCellNear(clickCell, map, 2.9f);
+        if (!rallyCell.IsValid)
+        {
+            return false;
+        }
         DraftedPawns.Clear();
         List<object> selected = selector.SelectedObjectsListForReading;
         for (int i = 0; i < selected.Count; i++)
@@ -229,12 +269,6 @@ public static class TryStartInteractionPatch
         {
             return false;
         }
-        IntVec3 rallyCell = CellFinder.StandableCellNear(clickCell, map, 2.9f);
-        if (!rallyCell.IsValid)
-        {
-            DraftedPawns.Clear();
-            return false;
-        }
         selector.gotoController.Deactivate();
         TakeCoverController.Instance.StartInteraction(rallyCell, DraftedPawns);
         DraftedPawns.Clear();
@@ -245,62 +279,23 @@ public static class TryStartInteractionPatch
     }
 }
 
-internal static class ActivationKeySwap
-{
-    private static readonly MethodInfo Original = AccessTools.PropertyGetter(typeof(TakeCoverInput), nameof(TakeCoverInput.ActivationKeyHeld));
-
-    private static readonly MethodInfo Replacement = AccessTools.Method(typeof(Tweak), nameof(Tweak.ActivationKeyHeld));
-
-    public static IEnumerable<CodeInstruction> Swap(IEnumerable<CodeInstruction> instructions, string target)
-    {
-        int count = 0;
-        foreach (CodeInstruction instruction in instructions)
-        {
-            if (instruction.Calls(Original))
-            {
-                instruction.operand = Replacement;
-                count++;
-            }
-            yield return instruction;
-        }
-        if (count == 0)
-        {
-            Log.Warning("[TakeCoverTweak] No TakeCover activation key check found in " + target + "; controls unchanged there.");
-        }
-    }
-}
-
 /// <summary>
-/// Feeds the planner the tweaked geometry: threat projected along the drag, search width equal to the drag length.
-/// Drags shorter than the minimum produce no destinations, so a plain click shows no preview.
+/// Feeds the planner the tweaked geometry (see <see cref="Formation"/>): the threat replaces the drag end, and the
+/// search area comes from the drag length instead of the pawn count. Drags shorter than the minimum produce no
+/// destinations, so a plain click shows no preview.
 /// </summary>
 [HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.AssignDestinations))]
 public static class AssignDestinationsPatch
 {
-    private static readonly MethodInfo SpacingOriginal = AccessTools.Method(typeof(TakeCoverPlanner), "LateralSpacingForOffset");
+    private static readonly MethodInfo SpacingOriginal = AccessTools.Method(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.LateralSpacingForOffset));
 
-    private static readonly MethodInfo SpacingReplacement = AccessTools.Method(typeof(Tweak), nameof(Tweak.LateralSpacing));
+    private static readonly MethodInfo SpacingReplacement = AccessTools.Method(typeof(AssignDestinationsPatch), nameof(LateralSpacing));
 
     private static readonly MethodInfo DimensionsOriginal = AccessTools.Method(typeof(TakeCoverPlanner.SearchDimensions), nameof(TakeCoverPlanner.SearchDimensions.ForPawnCount));
 
     private static readonly MethodInfo DimensionsReplacement = AccessTools.Method(typeof(AssignDestinationsPatch), nameof(SearchDimensionsFor));
 
-    /// <summary>Rows searched behind the rally line for the planner call in progress: half the dragged width, up to 12.</summary>
-    public static int RearDepth;
-
-    /// <summary>
-    /// Replaces SearchDimensions.ForPawnCount: same width, but the depth grows with the dragged width instead of only
-    /// with the pawn count, so wide formations find more cover and the forward cover range is not cut short.
-    /// </summary>
-    public static TakeCoverPlanner.SearchDimensions SearchDimensionsFor(int pawnCount, int manualLateralRangeOffset)
-    {
-        TakeCoverPlanner.SearchDimensions dimensions = TakeCoverPlanner.SearchDimensions.ForPawnCount(pawnCount, manualLateralRangeOffset);
-        int rear = Mathf.Max(dimensions.RearRange, RearDepth);
-        int forward = Mathf.Max(dimensions.ForwardRange, RowBandPatch.CoverFrontDepth);
-        return new TakeCoverPlanner.SearchDimensions(dimensions.LateralRange, rear, forward);
-    }
-
-    public static bool Prefix(List<Pawn> pawns, IntVec3 start, ref IntVec3 end, ref int manualLateralRangeOffset, List<IntVec3> dests, ref TakeCoverSearchArea searchArea)
+    public static bool Prefix(List<Pawn> pawns, IntVec3 start, ref IntVec3 end, List<IntVec3> dests, ref TakeCoverSearchArea searchArea)
     {
         if (pawns.Count == 0)
         {
@@ -316,34 +311,36 @@ public static class AssignDestinationsPatch
             searchArea = TakeCoverSearchArea.Invalid;
             return false;
         }
-        end = Tweak.ProjectThreatCell(start, end, pawns[0].Map);
-        CoverPreview.ThreatCell = end;
-        OverflowPatch.RallyCell = start;
-        RowBandPatch.CoverFrontDepth = Mathf.Clamp(Mathf.RoundToInt(length / 4f), 1, 6);
-        RearDepth = Mathf.Clamp(Mathf.RoundToInt(length / 2f), 0, 12);
-
-        // Mirror TakeCover's SearchDimensions.ForPawnCount base width, then offset it to the dragged half-width.
-        float t = (Mathf.Clamp(pawns.Count, 1, 12) - 1) / 11f;
-        int baseLateralRange = Mathf.RoundToInt(Mathf.Lerp(5f, 13f, t));
-        int lateralRange = Mathf.Clamp(Mathf.RoundToInt(length / 2f), 1, 24);
-        manualLateralRangeOffset = lateralRange - baseLateralRange;
-
-        // Spread slots over the searched columns; the spacing is only used by the original (debug-logged) path.
-        Tweak.CurrentHalfWidth = lateralRange;
-        Tweak.CurrentSpacing = pawns.Count > 1 ? 2f * lateralRange / (pawns.Count - 1) : 1f;
+        Formation.Set(start, end, length, pawns.Count, pawns[0].Map);
+        end = Formation.Threat;
         return true;
     }
 
+    /// <summary>
+    /// Replaces SearchDimensions.ForPawnCount: width from the drag length, depth from the drag length too but never
+    /// below TakeCover's pawn-count depth, so wide formations find more cover and the forward cover range fits.
+    /// </summary>
+    public static TakeCoverPlanner.SearchDimensions SearchDimensionsFor(int pawnCount, int manualLateralRangeOffset)
+    {
+        TakeCoverPlanner.SearchDimensions dimensions = TakeCoverPlanner.SearchDimensions.ForPawnCount(pawnCount, 0);
+        int rear = Mathf.Max(dimensions.RearRange, Formation.RearDepth);
+        int forward = Mathf.Max(dimensions.ForwardRange, Formation.FrontDepth);
+        return new TakeCoverPlanner.SearchDimensions(Formation.HalfWidth, rear, forward);
+    }
+
+    /// <summary>Replaces TakeCoverPlanner.LateralSpacingForOffset so slots spread over the dragged width.</summary>
+    public static float LateralSpacing(int manualLateralRangeOffset) => Formation.Spacing;
+
     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        int count = 0;
+        int spacingCount = 0;
         int dimensionsCount = 0;
         foreach (CodeInstruction instruction in instructions)
         {
             if (instruction.Calls(SpacingOriginal))
             {
                 instruction.operand = SpacingReplacement;
-                count++;
+                spacingCount++;
             }
             else if (instruction.Calls(DimensionsOriginal))
             {
@@ -354,9 +351,9 @@ public static class AssignDestinationsPatch
         }
         if (dimensionsCount == 0)
         {
-            Log.Warning("[TakeCoverTweak] SearchDimensions.ForPawnCount call not found in TakeCoverPlanner.AssignDestinations; search depth unchanged.");
+            Log.Warning("[TakeCoverTweak] SearchDimensions.ForPawnCount call not found in TakeCoverPlanner.AssignDestinations; search area unchanged.");
         }
-        if (count == 0)
+        if (spacingCount == 0)
         {
             Log.Warning("[TakeCoverTweak] LateralSpacingForOffset call not found in TakeCoverPlanner.AssignDestinations; formation spacing unchanged.");
         }
@@ -388,37 +385,43 @@ public static class HandleRangeScrollPatch
 
 /// <summary>
 /// Keeps pawns from moving past the rally line: a cell in front of it is allowed only when that cell itself has cover
-/// (TakeCover's minimum cover chance) and lies at most <see cref="CoverFrontDepth"/> cells ahead (a quarter of the
-/// dragged width, 1 to 6). This is judged per cell, not per tier: when no cell can see the threat, cover cells only
-/// reach the planner through the last no-sight tier, which asks for no minimum cover. Behind the line the whole search
-/// depth is allowed (see AssignDestinationsPatch.SearchDimensionsFor); the depth penalty keeps pawns close to the line.
+/// (TakeCover's minimum cover chance) and lies at most <see cref="Formation.FrontDepth"/> cells ahead. This is judged
+/// per cell, not per tier: when no cell can see the threat, cover cells only reach the planner through the last
+/// no-sight tier, which asks for no minimum cover. Behind the line the whole search depth is allowed; the depth
+/// penalty keeps pawns close to the line.
 /// </summary>
 [HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.BuildCandidates))]
 public static class RowBandPatch
 {
-    public static int CoverFrontDepth = 4;
-
     public static void Postfix(List<TakeCoverPlanner.CoverCandidate> __result)
     {
         // Positive depth is toward the enemy.
-        __result.RemoveAll(candidate => candidate.Depth > 0 && (candidate.Depth > CoverFrontDepth || candidate.CoverChance < TakeCoverPlanner.MinimumCoverChance));
+        __result.RemoveAll(candidate => candidate.Depth > 0 && (candidate.Depth > Formation.FrontDepth || candidate.CoverChance < TakeCoverPlanner.MinimumCoverChance));
     }
 }
 
 /// <summary>
-/// TakeCover leaves pawns where they are when it runs out of destinations, which happened a lot with large
-/// selections. Those pawns now get a free cell near the rally point, not past the rally line, picked the same way as
-/// the vanilla group move.
+/// After TakeCover hands out destinations: pawns it could not place get a free cell instead of staying put, then the
+/// cover of every destination is recorded for the preview colors.
 /// </summary>
 [HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.AssignSelectedDestinations))]
-[HarmonyPriority(Priority.First)]
-public static class OverflowPatch
+public static class AssignSelectedDestinationsPatch
 {
-    public static IntVec3 RallyCell = IntVec3.Invalid;
-
     public static void Postfix(List<TakeCoverPlanner.PawnProfile> pawnProfiles, List<TakeCoverPlanner.SelectedDestination> selectedDestinations, List<IntVec3> dests)
     {
-        if (!RallyCell.IsValid || !CoverPreview.ThreatCell.IsValid)
+        PlaceOverflow(pawnProfiles, selectedDestinations, dests);
+        CoverPreview.Record(pawnProfiles, selectedDestinations, dests);
+    }
+
+    /// <summary>
+    /// TakeCover leaves pawns where they are when it runs out of destinations, which happened a lot with large
+    /// selections. Those pawns now get a free cell near the rally point, not past the rally line, picked the same way
+    /// as the vanilla group move.
+    /// </summary>
+    private static void PlaceOverflow(List<TakeCoverPlanner.PawnProfile> pawnProfiles, List<TakeCoverPlanner.SelectedDestination> selectedDestinations, List<IntVec3> dests)
+    {
+        IntVec3 rally = Formation.Rally;
+        if (!rally.IsValid || !Formation.Threat.IsValid)
         {
             return;
         }
@@ -445,10 +448,9 @@ public static class OverflowPatch
         {
             return;
         }
-        Vector3 forward = CoverPreview.ThreatCell.ToVector3() - RallyCell.ToVector3();
+        Vector3 forward = Formation.Threat.ToVector3() - rally.ToVector3();
         forward.y = 0f;
         forward.Normalize();
-        IntVec3 rally = RallyCell;
         foreach (TakeCoverPlanner.PawnProfile profile in overflow)
         {
             Pawn pawn = profile.Pawn;

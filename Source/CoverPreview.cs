@@ -25,9 +25,6 @@ public static class CoverPreview
 
     private static readonly Material NoneMaterial = CircleMaterial(new Color(0.62f, 0.42f, 0.4f));
 
-    /// <summary>Threat cell of the planner call in progress, used to rate cells that are not planner candidates.</summary>
-    public static IntVec3 ThreatCell = IntVec3.Invalid;
-
     /// <summary>Cover chance of each destination, indexed like TakeCoverController.dests.</summary>
     public static readonly List<float> DestCover = new List<float>();
 
@@ -44,13 +41,9 @@ public static class CoverPreview
         }
         return coverChance >= PartialCover ? PartialMaterial : NoneMaterial;
     }
-}
 
-/// <summary>Records the cover chance of every assigned destination, including pawns that keep their position.</summary>
-[HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.AssignSelectedDestinations))]
-public static class RecordCoverPatch
-{
-    public static void Postfix(List<TakeCoverPlanner.PawnProfile> pawnProfiles, List<TakeCoverPlanner.SelectedDestination> selectedDestinations, List<IntVec3> dests)
+    /// <summary>Records the cover chance of every assigned destination, including pawns placed outside the planner.</summary>
+    public static void Record(List<TakeCoverPlanner.PawnProfile> pawnProfiles, List<TakeCoverPlanner.SelectedDestination> selectedDestinations, List<IntVec3> dests)
     {
         List<float> covers = CoverPreview.DestCover;
         covers.Clear();
@@ -73,8 +66,8 @@ public static class RecordCoverPatch
             }
             else
             {
-                // Fallback: the pawn stays where it is, which was never rated as a candidate.
-                covers.Add(TakeCoverPlanner.CombatModel.EvaluateCover(cell, CoverPreview.ThreatCell, map).CoverChance);
+                // Overflow or fallback cell, never rated as a candidate.
+                covers.Add(TakeCoverPlanner.CombatModel.EvaluateCover(cell, Formation.Threat, map).CoverChance);
             }
         }
     }

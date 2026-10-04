@@ -11,7 +11,7 @@ namespace TakeCoverTweak;
 /// The original recomputes every candidate's friendly-fire penalty against every selected cell for each slot and
 /// each optimization step (about candidates x pawns^2 pair checks, 400+ ms with 40 pawns). Here each candidate keeps
 /// a running penalty total that is updated only for the pair that changed, and the per-slot sort becomes a min scan
-/// with the same comparer. Slot ideal positions come from Tweak.IdealLateral instead of the fixed center-out spacing. Debug-logged runs still use the original so the trace stays complete.
+/// with the same comparer. Slot ideal positions come from Formation.IdealLateral instead of the fixed center-out spacing. Debug-logged runs still use the original so the trace stays complete.
 /// </summary>
 [HarmonyPatch(typeof(TakeCoverPlanner), nameof(TakeCoverPlanner.AddSelectedDestinations))]
 public static class FastSelectPatch
@@ -60,7 +60,7 @@ public static class FastSelectPatch
         while (selected.Count < desiredCount)
         {
             int slotIndex = selected.Count;
-            float idealLateral = Tweak.IdealLateral(slotIndex, desiredCount);
+            float idealLateral = Formation.IdealLateral(slotIndex, desiredCount);
             int best = -1;
             TakeCoverPlanner.SelectedDestination bestDestination = default;
             for (int c = 0; c < candidateCount; c++)
