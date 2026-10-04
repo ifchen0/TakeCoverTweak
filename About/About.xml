@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>TakeCover Tweak</name>
+  <author>ifchen0</author>
+  <packageId>ifchen0.takecovertweak</packageId>
+  <supportedVersions><li>1.6</li></supportedVersions>
+  <description>Unofficial control tweak for TakeCover.
+
+Plain right-drag with drafted pawns issues a take-cover order:
+- The cell where you press is the rally point the formation is centered on.
+- The drag direction is the enemy direction; cover is chosen against it.
+- The drag length is the total formation width.
+- Pawns spread out in a single row, stepping at most 2 cells forward or back to reach cover. Pawns that find no cover still take their place in the row.
+
+A right-click without dragging, or any right-click while holding Ctrl, behaves like vanilla.
+
+Shift + scroll width adjustment and the drag line are removed.
+
+Safe to add to or remove from an existing save.</description>
+  <modDependencies>
+    <li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName><steamWorkshopUrl>steam://url/CommunityFilePage/2009463077</steamWorkshopUrl></li>
+    <li><packageId>rabiosus.TakeCover</packageId><displayName>TakeCover</displayName><steamWorkshopUrl>steam://url/CommunityFilePage/3749200746</steamWorkshopUrl></li>
+  </modDependencies>
+  <loadAfter>
+    <li>brrainz.harmony</li>
+    <li>rabiosus.TakeCover</li>
+  </loadAfter>
+</ModMetaData>
