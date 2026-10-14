@@ -376,6 +376,46 @@ public static class FinalizeInteractionPatch
     }
 }
 
+/// <summary>
+/// Fallback for a lost right-button release. TakeCover finishes its interaction on the MouseUp event, but on
+/// RimWorld 1.7 that event does not always reach Selector.SelectorOnGUI, so with drafted pawns selected a right-click
+/// randomly did nothing. When the button has been up for two frames and the interaction is still active, it is
+/// finished here instead: a click still opens the vanilla menu and a drag still issues the take-cover order.
+/// </summary>
+[HarmonyPatch(typeof(Selector), "SelectorOnGUI")]
+public static class LostReleasePatch
+{
+    private static int releaseSeenFrame = -1;
+
+    private static bool logged;
+
+    public static void Prefix()
+    {
+        TakeCoverController controller = TakeCoverController.Instance;
+        if (!controller.Active || Input.GetMouseButton(1))
+        {
+            releaseSeenFrame = -1;
+            return;
+        }
+        if (releaseSeenFrame < 0)
+        {
+            releaseSeenFrame = Time.frameCount;
+            return;
+        }
+        if (Time.frameCount <= releaseSeenFrame + 1)
+        {
+            return;
+        }
+        releaseSeenFrame = -1;
+        if (!logged)
+        {
+            logged = true;
+            Log.Message("[TakeCoverTweak] Right-button release was not delivered; finished the order from the fallback (logged once).");
+        }
+        controller.FinalizeInteraction();
+    }
+}
+
 /// <summary>Width now comes from the drag length, so Shift + scroll no longer adjusts it (and no longer eats scroll events).</summary>
 [HarmonyPatch(typeof(TakeCoverController), "HandleRangeScroll")]
 public static class HandleRangeScrollPatch
