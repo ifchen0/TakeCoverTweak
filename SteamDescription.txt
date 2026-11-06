@@ -18,8 +18,8 @@ While pawns are drafted, a plain right-click acts when you release the button in
 [h2]Cover preview[/h2]While dragging, each destination circle shows how much cover that cell gives against the enemy direction:
 [list]
 [*][b]Green:[/b] 50% or more
-[*][b]Yellow:[/b] 20% or more
-[*][b]Red:[/b] below 20%
+[*][b]Yellow:[/b] 12% or more
+[*][b]Red:[/b] below 12%
 [/list]
 The drag line is no longer drawn.
 

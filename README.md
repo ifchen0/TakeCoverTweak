@@ -10,7 +10,7 @@ Steam Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=381348293
 - **Right-click without dragging**: vanilla behavior.
 - **Ctrl + right-click or right-drag**: fully vanilla.
 
-The press point is the rally point, the drag direction is the enemy direction and the drag length is the total formation width. Destination circles show the cover of each cell (green 50% or more, yellow 20% or more, red below).
+The press point is the rally point, the drag direction is the enemy direction and the drag length is the total formation width. Destination circles show the cover of each cell (green 50% or more, yellow 12% or more, red below).
 
 **Along a fence**
 

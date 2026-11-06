@@ -8,14 +8,15 @@ namespace TakeCoverTweak;
 
 /// <summary>
 /// Colors each destination circle by the cover it gives against the threat:
-/// green at 50% or more, yellow at 20% or more, red below that.
+/// green at 50% or more, yellow at TakeCover's minimum cover chance (12%) or more, red below that.
+/// Yellow starts where TakeCover itself starts counting a cell as cover, so a cell it chose for cover is never red.
 /// </summary>
 [StaticConstructorOnStartup]
 public static class CoverPreview
 {
     public const float GoodCover = 0.5f;
 
-    public const float PartialCover = 0.2f;
+    public static readonly float PartialCover = TakeCoverPlanner.MinimumCoverChance;
 
     private static readonly Color CircleAlpha = new Color(1f, 1f, 1f, 0.5f);
 
